@@ -8,9 +8,9 @@
 #define N_PIXELS 3072
 #define N_CLASSES 10
 #define N_IMAGES 10000
-#define ETA 0.01f
+#define ETA 0.1f
 #define BATCH_SIZE 256
-#define N_EPOCHS 50
+#define N_EPOCHS 90
 
 const char* CLASS_NAMES[10] = {
     "avion", "auto", "pajaro", "gato", "ciervo",
@@ -44,19 +44,19 @@ int predict_image(const std::vector<float>&weights,
 }
 
 int main() {
-    auto batch = load_cifar10_batch("D:/Usuarios/Descargas/data/data/data_batch_1.bin");
+    auto batch = load_cifar10_batch("D:/Usuarios/Descargas/data/data/data_batch_3.bin");
 
     std::vector<float> h_images(N_IMAGES * N_PIXELS);
     std::vector<unsigned char> h_labels(N_IMAGES);
     for (int i = 0; i < N_IMAGES; ++i) {
         h_labels[i] = batch[i].label;
         for (int j = 0; j < N_PIXELS; ++j)
-            h_images[i * N_PIXELS + j] = batch[i].pixels[j] / 255.0f;
+            h_images[i * N_PIXELS + j] = batch[i].pixels[j] / 255.0f - 0.5f;
     }
 
     std::vector<float> h_weights(N_CLASSES * N_PIXELS);
     std::vector<float> h_bias(N_CLASSES, 0.0f);
-    for (auto& w : h_weights) w = ((float)rand() / RAND_MAX) * 0.01f;
+    for (auto& w : h_weights) w = ((float)rand() / RAND_MAX - 0.5f) * 0.01f;
 
     float* d_images, * d_weights, * d_output, * d_bias;
     unsigned char* d_labels;
@@ -73,17 +73,16 @@ int main() {
 
     int threads = BATCH_SIZE;
     int blocks = (N_IMAGES + threads - 1) / threads;
-    size_t sharedMem = N_PIXELS * sizeof(float);
 
     for (int epoch = 0; epoch < N_EPOCHS; ++epoch) {
         for (int c = 0; c < N_CLASSES; ++c) {
             float* w_c = d_weights + c * N_PIXELS;
             float* b_c = d_bias + c;
 
-            perceptron_forward_batch << <blocks, threads >> > (w_c, d_images, d_output, N_PIXELS, N_IMAGES, h_bias[c]);
+            perceptron_forward_batch << <blocks, threads >> > (w_c, d_images, d_output, N_PIXELS, N_IMAGES, b_c);
             CUDA_CHECK(cudaDeviceSynchronize());
 
-            perceptron_update_batch << <blocks, threads, sharedMem >> > (w_c, d_images, d_output, d_labels,
+            perceptron_update_batch << <blocks, threads >> > (w_c, d_images, d_output, d_labels,
                 N_PIXELS, N_IMAGES, c, ETA, b_c);
             CUDA_CHECK(cudaDeviceSynchronize());
         }
