@@ -3,46 +3,55 @@
 #include <math.h>
 
 __global__ void perceptron_forward_batch(
-    const float* d_weights, const float* d_images, float* d_output,
-    int n_pixels, int n_images, float bias)
+    const float* d_weights,
+    const float* d_images,
+    float* d_output,
+    int n_pixels,
+    int n_images,
+    const float* d_bias)
 {
     int img_idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (img_idx >= n_images) return;
 
-    float sum = bias;
-    for (int i = 0; i < n_pixels; ++i)
-        sum += d_weights[i] * d_images[img_idx * n_pixels + i];
+    float sum = *d_bias;
 
-    d_output[img_idx] = 1.0f / (1.0f + expf(-sum));
+    const float* img = &d_images[img_idx * n_pixels];
+
+    for (int i = 0; i < n_pixels; ++i)
+        sum += d_weights[i] * img[i];
+
+    // NO sigmoid, raw score
+    d_output[img_idx] = sum;
 }
 
 __global__ void perceptron_update_batch(
-    float* d_weights, const float* d_images, const float* d_output,
-    const unsigned char* d_labels, int n_pixels, int n_images,
-    int target_class, float eta, float* d_bias)
+    float* d_weights,
+    const float* d_images,
+    const float* d_output,
+    const unsigned char* d_labels,
+    int n_pixels, int n_images,
+    int target_class,
+    float eta,
+    float* d_bias)
 {
-    extern __shared__ float shared_grad[]; // espacio compartido para gradientes
-    int tid = threadIdx.x;
+    int img_idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (img_idx >= n_images) return;
 
-    // inicializar gradientes locales
-    for (int i = tid; i < n_pixels; i += blockDim.x)
-        shared_grad[i] = 0.0f;
-    __syncthreads();
+    // Convertir la etiqueta a +1 o -1
+    int y_true = (d_labels[img_idx] == target_class) ? 1 : -1;
 
-    // cada hilo procesa una imagen
-    int img_idx = blockIdx.x * blockDim.x + tid;
-    if (img_idx < n_images) {
-        float t = (d_labels[img_idx] == target_class) ? 1.0f : 0.0f;
-        float error = t - d_output[img_idx];
+    float output = d_output[img_idx];
 
-        for (int i = 0; i < n_pixels; ++i)
-            shared_grad[i] += error * d_images[img_idx * n_pixels + i];
+    // Si está bien clasificado, no hacemos nada
+    if (y_true * output > 0) return;
 
-        atomicAdd(d_bias, eta * error);
-    }
-    __syncthreads();
+    // Si está mal clasificado: actualizar pesos
+    const float* img = &d_images[img_idx * n_pixels];
 
-    // reducci�n: aplicar gradiente acumulado al peso global
-    for (int i = tid; i < n_pixels; i += blockDim.x)
-        d_weights[i] += eta * shared_grad[i];
+    // Actualizar w += eta * y_true * x
+    for (int i = 0; i < n_pixels; ++i)
+        atomicAdd(&d_weights[i], eta * y_true * img[i]);
+
+    // Actualizar b += eta * y_true
+    atomicAdd(d_bias, eta * (float)y_true);
 }
