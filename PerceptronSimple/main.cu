@@ -10,7 +10,7 @@
 #define N_IMAGES 10000
 #define ETA 0.1f
 #define BATCH_SIZE 256
-#define N_EPOCHS 90
+#define N_EPOCHS 60
 
 const char* CLASS_NAMES[10] = {
     "avion", "auto", "pajaro", "gato", "ciervo",
@@ -44,7 +44,7 @@ int predict_image(const std::vector<float>&weights,
 }
 
 int main() {
-    auto batch = load_cifar10_batch("D:/Usuarios/Descargas/data/data/data_batch_3.bin");
+    auto batch = load_cifar10_batch("D:/Usuarios/Descargas/data/data/data_batch_1.bin");
 
     std::vector<float> h_images(N_IMAGES * N_PIXELS);
     std::vector<unsigned char> h_labels(N_IMAGES);
@@ -86,8 +86,46 @@ int main() {
                 N_PIXELS, N_IMAGES, c, ETA, b_c);
             CUDA_CHECK(cudaDeviceSynchronize());
         }
-        std::cout << "Epoch " << epoch + 1 << " completada" << std::endl;
+
+        CUDA_CHECK(cudaMemcpy(h_weights.data(), d_weights, h_weights.size() * sizeof(float), cudaMemcpyDeviceToHost));
+        CUDA_CHECK(cudaMemcpy(h_bias.data(), d_bias, h_bias.size() * sizeof(float), cudaMemcpyDeviceToHost));
+
+        int correct = 0;
+        double loss = 0.0;
+
+        for (int i = 0; i < N_IMAGES; ++i) {
+            std::vector<float> scores(N_CLASSES);
+            float max_score = -1e9;
+            int pred = -1;
+
+            for (int c = 0; c < N_CLASSES; ++c) {
+                float sum = h_bias[c];
+                for (int j = 0; j < N_PIXELS; ++j)
+                    sum += h_weights[c * N_PIXELS + j] * h_images[i * N_PIXELS + j];
+                scores[c] = sum;
+                if (sum > max_score) {
+                    max_score = sum;
+                    pred = c;
+                }
+            }
+
+            float exp_sum = 0.0f;
+            for (int c = 0; c < N_CLASSES; ++c)
+                exp_sum += exp(scores[c] - max_score);
+            float softmax_prob = exp(scores[h_labels[i]] - max_score) / exp_sum;
+            loss += -logf(softmax_prob + 1e-9f);
+
+            if (pred == h_labels[i]) correct++;
+        }
+
+        float acc = (float)correct / N_IMAGES;
+        loss /= N_IMAGES;
+
+        std::cout << "Epoch " << (epoch + 1) << "/" << N_EPOCHS << " - "
+            << "accuracy: " << acc
+            << " - loss: " << loss << std::endl;
     }
+
 
     CUDA_CHECK(cudaMemcpy(h_weights.data(), d_weights, h_weights.size() * sizeof(float), cudaMemcpyDeviceToHost));
     CUDA_CHECK(cudaMemcpy(h_bias.data(), d_bias, h_bias.size() * sizeof(float), cudaMemcpyDeviceToHost));
@@ -108,20 +146,17 @@ int main() {
 
     std::cout << "\n--- Prueba con una imagen ---\n";
 
-    // Tomemos una imagen del batch (ejemplo: la número 5)
     int test_idx = 5;
     std::vector<float> test_img(N_PIXELS);
     for (int j = 0; j < N_PIXELS; ++j)
         test_img[j] = h_images[test_idx * N_PIXELS + j];
 
-    // Predicción
     int pred = predict_image(h_weights, h_bias, test_img);
 
     std::cout << "Etiqueta real: " << (int)h_labels[test_idx]
         << " (" << CLASS_NAMES[h_labels[test_idx]] << ")\n";
     std::cout << "Prediccion:   " << pred
         << " (" << CLASS_NAMES[pred] << ")\n";
-
 
     cudaFree(d_images); cudaFree(d_weights); cudaFree(d_output); cudaFree(d_labels); cudaFree(d_bias);
 }
