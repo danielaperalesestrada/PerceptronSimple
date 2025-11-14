@@ -10,7 +10,7 @@
 #define N_IMAGES 10000
 #define ETA 0.1f
 #define BATCH_SIZE 256
-#define N_EPOCHS 60
+#define N_EPOCHS 10
 
 const char* CLASS_NAMES[10] = {
     "avion", "auto", "pajaro", "gato", "ciervo",
@@ -44,7 +44,7 @@ int predict_image(const std::vector<float>&weights,
 }
 
 int main() {
-    auto batch = load_cifar10_batch("D:/Usuarios/Descargas/data/data/data_batch_1.bin");
+	auto batch = load_cifar10_batch("D:/Usuarios/Descargas/data/data/data_batch_1.bin");//Se debe cambiar la ruta al archivo
 
     std::vector<float> h_images(N_IMAGES * N_PIXELS);
     std::vector<unsigned char> h_labels(N_IMAGES);
@@ -146,7 +146,7 @@ int main() {
 
     std::cout << "\n--- Prueba con una imagen ---\n";
 
-    int test_idx = 5;
+	int test_idx = 5;//Se puede cambiar el indice para probar con otra imagen
     std::vector<float> test_img(N_PIXELS);
     for (int j = 0; j < N_PIXELS; ++j)
         test_img[j] = h_images[test_idx * N_PIXELS + j];
